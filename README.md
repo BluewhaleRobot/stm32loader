@@ -1,23 +1,8 @@
 # startup
     xiaoqiang Ubuntu startup service  which launch groups of roslaunch files
+# stm32loader
+    Scripts to update the chassis firmware of xiaoqiang
 ##Usage:
-###download to xiaoqiang ros workspace
-```
-cd ~/Documents/ros/src
-git clone https://github.com/BlueWhaleRobot/startup.git
-cd ..
-catkin_make
-```   
-###Install this service into system, service name is startup
-```
-rosrun robot_upstart install startup/launch/startup.launch
-```
-###Uninstall this service
-```
-rosrun robot_upstart uninstall startup
-```
-### start this service manually
-```
 ###download to xiaoqiang Documents
 ```
 cd ~/Documents
