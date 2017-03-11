@@ -1,9 +1,10 @@
 #!/usr/bin/env python
+# coding: UTF-8
 
-# -*- coding: utf-8 -*-
 # vim: sw=4:ts=4:si:et:enc=utf-8
 
 # Author: Ivan A-R <ivan@tuxotronic.org>
+＃　　　　　Frank <www.bwbot.org>
 # Project page: http://tuxotronic.org/wiki/projects/stm32loader
 #
 # This file is part of stm32loader.
@@ -59,7 +60,7 @@ class CmdException(Exception):
 class CommandInterface:
     extended_erase = 0
 
-    def open(self, aport='/dev/tty.usbserial-ftCYPMYJ', abaudrate=115200) :
+    def open(self, aport='/dev/stm32Car', abaudrate=115200) :
         self.sp = serial.Serial(
             port=aport,
             baudrate=abaudrate,     # baudrate
@@ -98,9 +99,12 @@ class CommandInterface:
         time.sleep(0.5)
 
     def initChip(self):
-        # Set boot
-        self.sp.setRTS(0)
-        self.reset()
+        self.sp.write("\xcd\xeb\xd7\x01\x41") #send enter bootloader cmd
+        time.sleep(2.0)
+        self.sp.flushInput()
+        # # Set boot
+        # self.sp.setRTS(0)
+        # self.reset()
 
         self.sp.write("\x7F")       # Syncro
         return self._wait_for_ask("Syncro")
@@ -294,7 +298,7 @@ class CommandInterface:
         if usepbar:
             widgets = ['Reading: ', Percentage(),', ', ETA(), ' ', Bar()]
             pbar = ProgressBar(widgets=widgets,maxval=lng, term_width=79).start()
-        
+
         while lng > 256:
             if usepbar:
                 pbar.update(pbar.maxval-lng)
@@ -316,7 +320,7 @@ class CommandInterface:
         if usepbar:
             widgets = ['Writing: ', Percentage(),' ', ETA(), ' ', Bar()]
             pbar = ProgressBar(widgets=widgets, maxval=lng, term_width=79).start()
-        
+
         offs = 0
         while lng > 256:
             if usepbar:
@@ -351,18 +355,18 @@ def usage():
     -v          Verify
     -r          Read
     -l length   Length of read
-    -p port     Serial port (default: /dev/tty.usbserial-ftCYPMYJ)
+    -p port     Serial port (default: /dev/stm32Car)
     -b baud     Baud speed (default: 115200)
     -a addr     Target address
     -g addr     Address to start running at (0x08000000, usually)
-
+    -d chipid   0x410 for "STM32 Medium-density",0x414 for "STM32 High-density",
     ./stm32loader.py -e -w -v example/main.bin
 
     """ % sys.argv[0]
 
 
 if __name__ == "__main__":
-    
+
     # Import Psyco if available
     try:
         import psyco
@@ -372,7 +376,7 @@ if __name__ == "__main__":
         pass
 
     conf = {
-            'port': '/dev/tty.usbserial-ftCYPMYJ',
+            'port': '/dev/stm32Car',
             'baud': 115200,
             'address': 0x08000000,
             'erase': 0,
@@ -380,12 +384,13 @@ if __name__ == "__main__":
             'verify': 0,
             'read': 0,
             'go_addr':-1,
+            'chipid': 0x410,
         }
 
 # http://www.python.org/doc/2.5.2/lib/module-getopt.html
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hqVewvrp:b:a:l:g:")
+        opts, args = getopt.getopt(sys.argv[1:], "hqVewvrp:b:a:l:g:d:")
     except getopt.GetoptError, err:
         # print help information and exit:
         print str(err) # will print something like "option -a not recognized"
@@ -420,56 +425,60 @@ if __name__ == "__main__":
             conf['go_addr'] = eval(a)
         elif o == '-l':
             conf['len'] = eval(a)
+        elif o == '-d':
+            conf['chipid'] = eval(a)
         else:
             assert False, "unhandled option"
 
     cmd = CommandInterface()
     cmd.open(conf['port'], conf['baud'])
     mdebug(10, "Open port %(port)s, baud %(baud)d" % {'port':conf['port'], 'baud':conf['baud']})
-    try:
+    for try_counter in range(1):
         try:
-            cmd.initChip()
-        except:
-            print "Can't init. Ensure that BOOT0 is enabled and reset device"
+            try:
+                cmd.initChip()
+            except:
+                print "底盘芯片初始化失败，请给底盘重新上电后，再次运行这个升级脚本"
+                continue
 
+            bootversion = cmd.cmdGet()
+            mdebug(0, "Bootloader version %X" % bootversion)
+            id = cmd.cmdGetID()
+            mdebug(0, "Chip id: 0x%x (%s)" % (id, chip_ids.get(id, "Unknown")))
+            if id != conf['chipid']:
+                print "底盘芯片id读取错误，请检查小强底盘驱动模块版本，0x410对应迷你版，0x414对应旗舰版,然后切换升级脚本同时给底盘重新上电"
+                continue
+    #    cmd.cmdGetVersion()
+    #    cmd.cmdGetID()
+    #    cmd.cmdReadoutUnprotect()
+    #    cmd.cmdWriteUnprotect()
+    #    cmd.cmdWriteProtect([0, 1])
 
-        bootversion = cmd.cmdGet()
-        mdebug(0, "Bootloader version %X" % bootversion)
-        id = cmd.cmdGetID()
-        mdebug(0, "Chip id: 0x%x (%s)" % (id, chip_ids.get(id, "Unknown")))
-#    cmd.cmdGetVersion()
-#    cmd.cmdGetID()
-#    cmd.cmdReadoutUnprotect()
-#    cmd.cmdWriteUnprotect()
-#    cmd.cmdWriteProtect([0, 1])
+            if (conf['write'] or conf['verify']):
+                data = map(lambda c: ord(c), file(args[0], 'rb').read())
 
-        if (conf['write'] or conf['verify']):
-            data = map(lambda c: ord(c), file(args[0], 'rb').read())
+            if conf['erase']:
+                cmd.cmdEraseMemory()
 
-        if conf['erase']:
-            cmd.cmdEraseMemory()
+            if conf['write']:
+                cmd.writeMemory(conf['address'], data)
 
-        if conf['write']:
-            cmd.writeMemory(conf['address'], data)
+            if conf['verify']:
+                verify = cmd.readMemory(conf['address'], len(data))
+                if(data == verify):
+                    print "Verification OK"
+                    print "固件升级成功，请重启主机和给底盘重新上电"
+                else:
+                    print "Verification FAILED"
+                    print str(len(data)) + ' vs ' + str(len(verify))
+                    print "固件升级失败，请给底盘重新上电后，再次运行这个升级脚本"
 
-        if conf['verify']:
-            verify = cmd.readMemory(conf['address'], len(data))
-            if(data == verify):
-                print "Verification OK"
-            else:
-                print "Verification FAILED"
-                print str(len(data)) + ' vs ' + str(len(verify))
-                for i in xrange(0, len(data)):
-                    if data[i] != verify[i]:
-                        print hex(i) + ': ' + hex(data[i]) + ' vs ' + hex(verify[i])
+            if not conf['write'] and conf['read']:
+                rdata = cmd.readMemory(conf['address'], conf['len'])
+                file(args[0], 'wb').write(''.join(map(chr,rdata)))
 
-        if not conf['write'] and conf['read']:
-            rdata = cmd.readMemory(conf['address'], conf['len'])
-            file(args[0], 'wb').write(''.join(map(chr,rdata)))
-
-        if conf['go_addr'] != -1:
-            cmd.cmdGo(conf['go_addr'])
-
-    finally:
-        cmd.releaseChip()
-
+            if conf['go_addr'] != -1:
+                cmd.cmdGo(conf['go_addr'])
+            break
+        except Exception as e:
+            print str(e)
