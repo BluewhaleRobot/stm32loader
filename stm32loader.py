@@ -457,7 +457,7 @@ if __name__ == "__main__":
             try:
                 cmd.initChip()
             except:
-                print "底盘芯片初始化失败，请给底盘重新上电后，再次运行这个升级脚本"
+                print "底盘芯片初始化失败，请给底盘重新上电等待３秒后，再次运行这个升级脚本"
                 continue
 
             bootversion = cmd.cmdGet()
@@ -489,7 +489,13 @@ if __name__ == "__main__":
                 cmd.cmdEraseMemory()
 
             if conf['write']:
-                cmd.writeMemory(conf['address'], data)
+                verify = cmd.readMemory(conf['address'], len(data))
+                if(data == verify):
+                    print "底盘固件是最新版本，不需要升级,请给底盘重新上电后继续使用！"
+                    break
+                else:
+                    cmd.cmdEraseMemory()
+                    cmd.writeMemory(conf['address'], data)
 
             if conf['verify']:
                 verify = cmd.readMemory(conf['address'], len(data))
@@ -502,7 +508,7 @@ if __name__ == "__main__":
                     for i in xrange(0, len(data)):
                         if data[i] != verify[i]:
                             print hex(i) + ': ' + hex(data[i]) + ' vs ' + hex(verify[i])
-                    print "固件升级失败，请给底盘重新上电后，再次运行这个升级脚本"
+                    print "固件升级失败，请给底盘重新上电等待３秒后，再次运行这个升级脚本"
 
             if not conf['write'] and conf['read']:
                 rdata = cmd.readMemory(conf['address'], conf['len'])

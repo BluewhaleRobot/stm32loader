@@ -15,5 +15,5 @@ echo -e -n "\033[0m"
 sudo service startup stop
 echo -e "\033[34m 开始更新小强底盘固件..."
 echo -e -n "\033[0m"
-./stm32loader.py -e -w -v
+./stm32loader.py -w -v
 fi
