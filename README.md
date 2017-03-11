@@ -1,5 +1,3 @@
-# startup
-    xiaoqiang Ubuntu startup service  which launch groups of roslaunch files
 # stm32loader
     Scripts to update the chassis firmware of xiaoqiang
 ##Usage:
