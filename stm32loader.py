@@ -338,7 +338,22 @@ class CommandInterface:
             mdebug(5, "Write %(len)d bytes at 0x%(addr)X" % {'addr': addr, 'len': 256})
         self.cmdWriteMemory(addr, data[offs:offs+lng] + ([0xFF] * (256-lng)) )
 
-
+    def resetDevice(self):
+        AIRCR = 0xE000ED0C
+        mdebug(5, "Writing to Reset Register")
+        reg = [0x04,0x00,0xFA,0x05]
+        if self.cmdGeneric(0x31):
+            self.sp.write(self._encode_addr(AIRCR))
+            self._wait_for_ask("0x31 address failed")
+            self.sp.write(chr(3)) # len really
+            self.sp.write(chr(reg[0]))
+            self.sp.write(chr(reg[1]))
+            self.sp.write(chr(reg[2]))
+            self.sp.write(chr(reg[3]))
+            crc = 3^reg[0]^reg[1]^reg[2]^reg[3];
+            self.sp.write(chr(crc))
+            # don't wait for ack - device will have rebooted
+            mdebug(10, "    reset done")
 
 
 	def __init__(self) :
@@ -353,6 +368,7 @@ def usage():
     -e          Erase
     -w          Write
     -v          Verify
+    -X          Reset after
     -r          Read
     -l length   Length of read
     -p port     Serial port (default: /dev/stm32Car)
@@ -383,6 +399,7 @@ if __name__ == "__main__":
             'write': 0,
             'verify': 0,
             'read': 0,
+            'reset': 0,
             'go_addr':-1,
             'chipid': 0x410,
         }
@@ -390,7 +407,7 @@ if __name__ == "__main__":
 # http://www.python.org/doc/2.5.2/lib/module-getopt.html
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hqVewvrp:b:a:l:g:d:")
+        opts, args = getopt.getopt(sys.argv[1:], "hqVewvrXp:b:a:l:g:d:")
     except getopt.GetoptError, err:
         # print help information and exit:
         print str(err) # will print something like "option -a not recognized"
@@ -415,6 +432,8 @@ if __name__ == "__main__":
             conf['verify'] = 1
         elif o == '-r':
             conf['read'] = 1
+        elif o == '-X':
+            conf['reset'] = 1
         elif o == '-p':
             conf['port'] = a
         elif o == '-b':
@@ -480,6 +499,9 @@ if __name__ == "__main__":
                 else:
                     print "Verification FAILED"
                     print str(len(data)) + ' vs ' + str(len(verify))
+                    for i in xrange(0, len(data)):
+                        if data[i] != verify[i]:
+                            print hex(i) + ': ' + hex(data[i]) + ' vs ' + hex(verify[i])
                     print "固件升级失败，请给底盘重新上电后，再次运行这个升级脚本"
 
             if not conf['write'] and conf['read']:
@@ -488,6 +510,9 @@ if __name__ == "__main__":
 
             if conf['go_addr'] != -1:
                 cmd.cmdGo(conf['go_addr'])
+
+            if conf['reset']:
+                cmd.resetDevice()
             break
         except Exception as e:
             print str(e)
