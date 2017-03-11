@@ -4,7 +4,7 @@
 # vim: sw=4:ts=4:si:et:enc=utf-8
 
 # Author: Ivan A-R <ivan@tuxotronic.org>
-＃　　　　　Frank <www.bwbot.org>
+#　　　　　Frank <www.bwbot.org>
 # Project page: http://tuxotronic.org/wiki/projects/stm32loader
 #
 # This file is part of stm32loader.
@@ -39,8 +39,8 @@ QUIET = 20
 # these come from AN2606
 chip_ids = {
     0x412: "STM32 Low-density",
-    0x410: "STM32 Medium-density",
-    0x414: "STM32 High-density",
+    0x410: "xiaoqiang driver_boad_mini",
+    0x414: "xiaoqiang driver_boad_pro",
     0x420: "STM32 Medium-density value line",
     0x428: "STM32 High-density value line",
     0x430: "STM32 XL-density",
@@ -445,17 +445,26 @@ if __name__ == "__main__":
             mdebug(0, "Bootloader version %X" % bootversion)
             id = cmd.cmdGetID()
             mdebug(0, "Chip id: 0x%x (%s)" % (id, chip_ids.get(id, "Unknown")))
-            if id != conf['chipid']:
-                print "底盘芯片id读取错误，请检查小强底盘驱动模块版本，0x410对应迷你版，0x414对应旗舰版,然后切换升级脚本同时给底盘重新上电"
-                continue
+            conf['chipid'] = id
+            if  conf['chipid'] == 0x410:
+                print "found xiaoqiang driver_boad_mini"
+                if (conf['write'] or conf['verify']):
+                    data = map(lambda c: ord(c), file('mini.bin', 'rb').read())
+            elif conf['chipid'] == 0x414:
+                print "found xiaoqiang driver_boad_pro"
+                if (conf['write'] or conf['verify']):
+                    data = map(lambda c: ord(c), file('pro.bin', 'rb').read())
+            else:
+                if (conf['write'] or conf['verify']):
+                    data = map(lambda c: ord(c), file(args[0], 'rb').read())
+
     #    cmd.cmdGetVersion()
     #    cmd.cmdGetID()
     #    cmd.cmdReadoutUnprotect()
     #    cmd.cmdWriteUnprotect()
     #    cmd.cmdWriteProtect([0, 1])
 
-            if (conf['write'] or conf['verify']):
-                data = map(lambda c: ord(c), file(args[0], 'rb').read())
+
 
             if conf['erase']:
                 cmd.cmdEraseMemory()
