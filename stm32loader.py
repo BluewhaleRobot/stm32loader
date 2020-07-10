@@ -26,12 +26,7 @@
 import sys, getopt
 import serial
 import time
-
-try:
-    from progressbar import *
-    usepbar = 1
-except:
-    usepbar = 0
+from functools import reduce
 
 # Verbose level
 QUIET = 20
@@ -51,7 +46,7 @@ chip_ids = {
 
 def mdebug(level, message):
     if(QUIET >= level):
-        print >> sys.stderr , message
+        print(">> {stderr} , {message}".format(stderr=sys.stderr, message=message))
 
 
 class CmdException(Exception):
@@ -71,7 +66,9 @@ class CommandInterface:
             rtscts=0,               # don't enable RTS/CTS flow control
             timeout=5               # set a timeout value, None for waiting forever
         )
-
+    
+    def write_data(self, data):
+        self.sp.write(bytearray(data, encoding="ascii"))
 
     def _wait_for_ask(self, info = ""):
         # wait for ask
@@ -89,7 +86,7 @@ class CommandInterface:
                     raise CmdException("NACK "+info)
                 else:
                     # Unknown responce
-                    raise CmdException("Unknown response. "+info+": "+hex(ask))
+                    raise CmdException("Unknown response. "+info+": "+ hex(ask))
 
 
     def reset(self):
@@ -99,14 +96,14 @@ class CommandInterface:
         time.sleep(0.5)
 
     def initChip(self):
-        self.sp.write("\xcd\xeb\xd7\x01\x41") #send enter bootloader cmd
+        self.sp.write(b"\xcd\xeb\xd7\x01\x41") #send enter bootloader cmd
         time.sleep(2.0)
         self.sp.flushInput()
         # # Set boot
         # self.sp.setRTS(0)
         # self.reset()
 
-        self.sp.write("\x7F")       # Syncro
+        self.sp.write(b"\x7F")       # Syncro
         return self._wait_for_ask("Syncro")
 
     def releaseChip(self):
@@ -114,13 +111,13 @@ class CommandInterface:
         self.reset()
 
     def cmdGeneric(self, cmd):
-        self.sp.write(chr(cmd))
-        self.sp.write(chr(cmd ^ 0xFF)) # Control byte
+        self.write_data(chr(cmd))
+        self.write_data(chr(cmd ^ 0xFF)) # Control byte
         return self._wait_for_ask(hex(cmd))
 
     def cmdGet(self):
         if self.cmdGeneric(0x00):
-            mdebug(10, "*** Get command");
+            mdebug(10, "*** Get command")
             len = ord(self.sp.read())
             version = ord(self.sp.read())
             mdebug(10, "    Bootloader version: "+hex(version))
@@ -168,11 +165,11 @@ class CommandInterface:
         assert(lng <= 256)
         if self.cmdGeneric(0x11):
             mdebug(10, "*** ReadMemory command")
-            self.sp.write(self._encode_addr(addr))
+            self.write_data(self._encode_addr(addr))
             self._wait_for_ask("0x11 address failed")
             N = (lng - 1) & 0xFF
             crc = N ^ 0xFF
-            self.sp.write(chr(N) + chr(crc))
+            self.write_data(chr(N) + chr(crc))
             self._wait_for_ask("0x11 length failed")
             return map(lambda c: ord(c), self.sp.read(lng))
         else:
@@ -182,7 +179,7 @@ class CommandInterface:
     def cmdGo(self, addr):
         if self.cmdGeneric(0x21):
             mdebug(10, "*** Go command")
-            self.sp.write(self._encode_addr(addr))
+            self.write_data(self._encode_addr(addr))
             self._wait_for_ask("0x21 go failed")
         else:
             raise CmdException("Go (0x21) failed")
@@ -192,17 +189,17 @@ class CommandInterface:
         assert(len(data) <= 256)
         if self.cmdGeneric(0x31):
             mdebug(10, "*** Write memory command")
-            self.sp.write(self._encode_addr(addr))
+            self.write_data(self._encode_addr(addr))
             self._wait_for_ask("0x31 address failed")
             #map(lambda c: hex(ord(c)), data)
             lng = (len(data)-1) & 0xFF
-            mdebug(10, "    %s bytes to write" % [lng+1]);
-            self.sp.write(chr(lng)) # len really
+            mdebug(10, "    %s bytes to write" % [lng+1])
+            self.write_data(chr(lng)) # len really
             crc = 0xFF
             for c in data:
                 crc = crc ^ c
-                self.sp.write(chr(c))
-            self.sp.write(chr(crc))
+                self.write_data(chr(c))
+            self.write_data(chr(crc))
             self._wait_for_ask("0x31 programming failed")
             mdebug(10, "    Write memory done")
         else:
@@ -217,16 +214,16 @@ class CommandInterface:
             mdebug(10, "*** Erase memory command")
             if sectors is None:
                 # Global erase
-                self.sp.write(chr(0xFF))
-                self.sp.write(chr(0x00))
+                self.write_data(chr(0xFF))
+                self.write_data(chr(0x00))
             else:
                 # Sectors erase
-                self.sp.write(chr((len(sectors)-1) & 0xFF))
+                self.write_data(chr((len(sectors)-1) & 0xFF))
                 crc = 0xFF
                 for c in sectors:
                     crc = crc ^ c
-                    self.sp.write(chr(c))
-                self.sp.write(chr(crc))
+                    self.write_data(chr(c))
+                self.write_data(chr(crc))
             self._wait_for_ask("0x43 erasing failed")
             mdebug(10, "    Erase memory done")
         else:
@@ -236,13 +233,13 @@ class CommandInterface:
         if self.cmdGeneric(0x44):
             mdebug(10, "*** Extended Erase memory command")
             # Global mass erase
-            self.sp.write(chr(0xFF))
-            self.sp.write(chr(0xFF))
+            self.write_data(chr(0xFF))
+            self.write_data(chr(0xFF))
             # Checksum
-            self.sp.write(chr(0x00))
+            self.write_data(chr(0x00))
             tmp = self.sp.timeout
             self.sp.timeout = 30
-            print "Extended erase (0x44), this can take ten seconds or more"
+            print("Extended erase (0x44), this can take ten seconds or more")
             self._wait_for_ask("0x44 erasing failed")
             self.sp.timeout = tmp
             mdebug(10, "    Extended Erase memory done")
@@ -252,12 +249,12 @@ class CommandInterface:
     def cmdWriteProtect(self, sectors):
         if self.cmdGeneric(0x63):
             mdebug(10, "*** Write protect command")
-            self.sp.write(chr((len(sectors)-1) & 0xFF))
+            self.write_data(chr((len(sectors)-1) & 0xFF))
             crc = 0xFF
             for c in sectors:
                 crc = crc ^ c
-                self.sp.write(chr(c))
-            self.sp.write(chr(crc))
+                self.write_data(chr(c))
+            self.write_data(chr(crc))
             self._wait_for_ask("0x63 write protect failed")
             mdebug(10, "    Write protect done")
         else:
@@ -295,47 +292,27 @@ class CommandInterface:
 
     def readMemory(self, addr, lng):
         data = []
-        if usepbar:
-            widgets = ['Reading: ', Percentage(),', ', ETA(), ' ', Bar()]
-            pbar = ProgressBar(widgets=widgets,maxval=lng, term_width=79).start()
 
         while lng > 256:
-            if usepbar:
-                pbar.update(pbar.maxval-lng)
-            else:
-                mdebug(5, "Read %(len)d bytes at 0x%(addr)X" % {'addr': addr, 'len': 256})
+            mdebug(5, "Read %(len)d bytes at 0x%(addr)X" % {'addr': addr, 'len': 256})
             data = data + self.cmdReadMemory(addr, 256)
             addr = addr + 256
             lng = lng - 256
-        if usepbar:
-            pbar.update(pbar.maxval-lng)
-            pbar.finish()
-        else:
-            mdebug(5, "Read %(len)d bytes at 0x%(addr)X" % {'addr': addr, 'len': 256})
+        mdebug(5, "Read %(len)d bytes at 0x%(addr)X" % {'addr': addr, 'len': 256})
         data = data + self.cmdReadMemory(addr, lng)
         return data
 
     def writeMemory(self, addr, data):
         lng = len(data)
-        if usepbar:
-            widgets = ['Writing: ', Percentage(),' ', ETA(), ' ', Bar()]
-            pbar = ProgressBar(widgets=widgets, maxval=lng, term_width=79).start()
-
         offs = 0
         while lng > 256:
-            if usepbar:
-                pbar.update(pbar.maxval-lng)
-            else:
-                mdebug(5, "Write %(len)d bytes at 0x%(addr)X" % {'addr': addr, 'len': 256})
+            mdebug(5, "Write %(len)d bytes at 0x%(addr)X" % {'addr': addr, 'len': 256})
             self.cmdWriteMemory(addr, data[offs:offs+256])
             offs = offs + 256
             addr = addr + 256
             lng = lng - 256
-        if usepbar:
-            pbar.update(pbar.maxval-lng)
-            pbar.finish()
-        else:
-            mdebug(5, "Write %(len)d bytes at 0x%(addr)X" % {'addr': addr, 'len': 256})
+        
+        mdebug(5, "Write %(len)d bytes at 0x%(addr)X" % {'addr': addr, 'len': 256})
         self.cmdWriteMemory(addr, data[offs:offs+lng] + ([0xFF] * (256-lng)) )
 
     def resetDevice(self):
@@ -343,25 +320,26 @@ class CommandInterface:
         mdebug(5, "Writing to Reset Register")
         reg = [0x04,0x00,0xFA,0x05]
         if self.cmdGeneric(0x31):
-            self.sp.write(self._encode_addr(AIRCR))
+            self.write_data(self._encode_addr(AIRCR))
             self._wait_for_ask("0x31 address failed")
-            self.sp.write(chr(3)) # len really
-            self.sp.write(chr(reg[0]))
-            self.sp.write(chr(reg[1]))
-            self.sp.write(chr(reg[2]))
-            self.sp.write(chr(reg[3]))
-            crc = 3^reg[0]^reg[1]^reg[2]^reg[3];
-            self.sp.write(chr(crc))
+            self.write_data(chr(3)) # len really
+            self.write_data(chr(reg[0]))
+            self.write_data(chr(reg[1]))
+            self.write_data(chr(reg[2]))
+            self.write_data(chr(reg[3]))
+            crc = 3^reg[0]^reg[1]^reg[2]^reg[3]
+            self.write_data(chr(crc))
             # don't wait for ack - device will have rebooted
             mdebug(10, "    reset done")
 
-
-	def __init__(self) :
+    def __init__(self):
         pass
+
+	
 
 
 def usage():
-    print """Usage: %s [-hqVewvr] [-l length] [-p port] [-b baud] [-a addr] [-g addr] [file.bin]
+    print( """Usage: %s [-hqVewvr] [-l length] [-p port] [-b baud] [-a addr] [-g addr] [file.bin]
     -h          This help
     -q          Quiet
     -V          Verbose
@@ -378,7 +356,7 @@ def usage():
     -d chipid   0x410 for "STM32 Medium-density",0x414 for "STM32 High-density",
     ./stm32loader.py -e -w -v example/main.bin
 
-    """ % sys.argv[0]
+    """ % sys.argv[0])
 
 
 if __name__ == "__main__":
@@ -387,7 +365,7 @@ if __name__ == "__main__":
     try:
         import psyco
         psyco.full()
-        print "Using Psyco..."
+        print("Using Psyco...")
     except ImportError:
         pass
 
@@ -408,9 +386,9 @@ if __name__ == "__main__":
 
     try:
         opts, args = getopt.getopt(sys.argv[1:], "hqVewvrXp:b:a:l:g:d:")
-    except getopt.GetoptError, err:
+    except getopt.GetoptError as err:
         # print help information and exit:
-        print str(err) # will print something like "option -a not recognized"
+        print(str(err)) # will print something like "option -a not recognized"
         usage()
         sys.exit(2)
 
@@ -453,11 +431,12 @@ if __name__ == "__main__":
     cmd.open(conf['port'], conf['baud'])
     mdebug(10, "Open port %(port)s, baud %(baud)d" % {'port':conf['port'], 'baud':conf['baud']})
     for try_counter in range(1):
+        cmd.initChip()
         try:
             try:
                 cmd.initChip()
             except:
-                print "底盘芯片初始化失败，请给底盘重新上电等待３秒后，再次运行这个升级脚本"
+                print("底盘芯片初始化失败，请给底盘重新上电等待３秒后，再次运行这个升级脚本")
                 continue
 
             bootversion = cmd.cmdGet()
@@ -466,16 +445,19 @@ if __name__ == "__main__":
             mdebug(0, "Chip id: 0x%x (%s)" % (id, chip_ids.get(id, "Unknown")))
             conf['chipid'] = id
             if  conf['chipid'] == 0x410:
-                print "found xiaoqiang driver_boad_mini"
+                print("found xiaoqiang driver_boad_mini")
                 if (conf['write'] or conf['verify']):
-                    data = map(lambda c: ord(c), file('mini.bin', 'rb').read())
+                    with open('mini.bin', 'rb') as f:
+                        data = map(lambda c: ord(c), f.read())
             elif conf['chipid'] == 0x414:
-                print "found xiaoqiang driver_boad_pro"
+                print("found xiaoqiang driver_boad_pro")
                 if (conf['write'] or conf['verify']):
-                    data = map(lambda c: ord(c), file('pro.bin', 'rb').read())
+                    with open('pro.bin', 'rb') as f:
+                        data = map(lambda c: ord(c), f.read())
             else:
                 if (conf['write'] or conf['verify']):
-                    data = map(lambda c: ord(c), file(args[0], 'rb').read())
+                    with open(args[0], 'rb') as f:
+                        data = map(lambda c: ord(c), f.read())
 
     #    cmd.cmdGetVersion()
     #    cmd.cmdGetID()
@@ -491,7 +473,7 @@ if __name__ == "__main__":
             if conf['write']:
                 verify = cmd.readMemory(conf['address'], len(data))
                 if(data == verify):
-                    print "底盘固件是最新版本，不需要升级,请给底盘重新上电后继续使用！"
+                    print("底盘固件是最新版本，不需要升级,请给底盘重新上电后继续使用！")
                     break
                 else:
                     cmd.cmdEraseMemory()
@@ -500,19 +482,20 @@ if __name__ == "__main__":
             if conf['verify']:
                 verify = cmd.readMemory(conf['address'], len(data))
                 if(data == verify):
-                    print "Verification OK"
-                    print "固件升级成功，请重启主机和给底盘重新上电"
+                    print("Verification OK")
+                    print("固件升级成功，请重启主机和给底盘重新上电")
                 else:
-                    print "Verification FAILED"
-                    print str(len(data)) + ' vs ' + str(len(verify))
-                    for i in xrange(0, len(data)):
+                    print("Verification FAILED")
+                    print(str(len(data)) + ' vs ' + str(len(verify)))
+                    for i in range(0, len(data)):
                         if data[i] != verify[i]:
-                            print hex(i) + ': ' + hex(data[i]) + ' vs ' + hex(verify[i])
-                    print "固件升级失败，请给底盘重新上电等待３秒后，再次运行这个升级脚本"
+                            print(hex(i) + ': ' + hex(data[i]) + ' vs ' + hex(verify[i]))
+                    print("固件升级失败，请给底盘重新上电等待３秒后，再次运行这个升级脚本")
 
             if not conf['write'] and conf['read']:
                 rdata = cmd.readMemory(conf['address'], conf['len'])
-                file(args[0], 'wb').write(''.join(map(chr,rdata)))
+                with open(args[0], 'wb') as f:
+                    f.write(''.join(map(chr,rdata)))
 
             if conf['go_addr'] != -1:
                 cmd.cmdGo(conf['go_addr'])
@@ -521,4 +504,4 @@ if __name__ == "__main__":
                 cmd.resetDevice()
             break
         except Exception as e:
-            print str(e)
+            print(str(e))
