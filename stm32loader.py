@@ -60,7 +60,7 @@ class CmdException(Exception):
 class CommandInterface:
     extended_erase = 0
 
-    def open(self, aport='/dev/ttyUSB001', abaudrate=115200) :
+    def open(self, aport='/dev/stm32Imu', abaudrate=115200) :
         self.sp = serial.Serial(
             port=aport,
             baudrate=abaudrate,     # baudrate
@@ -392,7 +392,7 @@ if __name__ == "__main__":
         pass
 
     conf = {
-            'port': '/dev/ttyUSB001',
+            'port': '/dev/stm32Imu',
             'baud': 115200,
             'address': 0x08000000,
             'erase': 0,
